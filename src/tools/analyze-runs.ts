@@ -1,5 +1,12 @@
 import { StravaActivity, StravaLap } from "../strava-client";
-import { RunAnalysis, RunStats, MonthlyStats } from "./types";
+import {
+  RunAnalysis,
+  RunStats,
+  MonthlyStats,
+  EnhancedMonthlyStats,
+  EnhancedMonthStats,
+  WeekStats,
+} from "./types";
 
 // Conversion constants
 const METERS_TO_MILES = 0.000621371; // Direct conversion from meters to miles
@@ -7,6 +14,17 @@ const METERS_TO_FEET = 3.28084;
 const METERS_PER_SEC_TO_MPH = 2.23694;
 const MIN_RUN_MINUTES = 4; // Minimum 4 minutes
 const MIN_RUN_MILES = 1; // Minimum 1 mile
+
+// Helper function to format pace properly
+function formatPace(paceSeconds: number): string {
+  const totalMinutes = Math.floor(paceSeconds / 60);
+  const remainingSeconds = Math.round(paceSeconds % 60);
+  // Handle the case where seconds round up to 60
+  if (remainingSeconds === 60) {
+    return `${totalMinutes + 1}:00`;
+  }
+  return `${totalMinutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+}
 
 export function analyzeRuns(activities: StravaActivity[]): {
   totalRuns: number;
@@ -28,8 +46,6 @@ export function analyzeRuns(activities: StravaActivity[]): {
       const distanceMiles = activity.distance * METERS_TO_MILES;
       const durationMinutes = activity.moving_time / 60;
       const paceSecondsPerMile = activity.moving_time / distanceMiles;
-      const paceMinutes = Math.floor(paceSecondsPerMile / 60);
-      const paceSeconds = Math.round(paceSecondsPerMile % 60);
 
       return {
         id: activity.id,
@@ -37,9 +53,7 @@ export function analyzeRuns(activities: StravaActivity[]): {
         date: activity.start_date_local,
         distance_miles: parseFloat(distanceMiles.toFixed(2)),
         duration_minutes: parseFloat(durationMinutes.toFixed(2)),
-        pace_per_mile: `${paceMinutes}:${paceSeconds
-          .toString()
-          .padStart(2, "0")}`,
+        pace_per_mile: formatPace(paceSecondsPerMile),
         pace_seconds: paceSecondsPerMile,
         elevation_gain_feet: Math.round(
           activity.total_elevation_gain * METERS_TO_FEET
@@ -146,8 +160,6 @@ export function getRunStats(runs: RunAnalysis[], year?: number): RunStats {
   const avgPaceSeconds =
     filteredRuns.reduce((sum, run) => sum + run.pace_seconds, 0) /
     filteredRuns.length;
-  const avgPaceMinutes = Math.floor(avgPaceSeconds / 60);
-  const avgPaceSecondsRemainder = Math.round(avgPaceSeconds % 60);
 
   const runsWithHR = filteredRuns.filter((run) => run.average_heartrate);
   const averageHeartrate =
@@ -192,9 +204,7 @@ export function getRunStats(runs: RunAnalysis[], year?: number): RunStats {
     averageDistance: parseFloat(
       (totalDistance / filteredRuns.length).toFixed(2)
     ),
-    averagePace: `${avgPaceMinutes}:${avgPaceSecondsRemainder
-      .toString()
-      .padStart(2, "0")}`,
+    averagePace: formatPace(avgPaceSeconds),
     averageHeartrate: averageHeartrate
       ? Math.round(averageHeartrate)
       : undefined,
@@ -326,8 +336,6 @@ export async function getFastestLaps(
         const distanceMiles = lap.distance * METERS_TO_MILES;
         const durationMinutes = lap.moving_time / 60;
         const paceSecondsPerMile = lap.moving_time / distanceMiles;
-        const paceMinutes = Math.floor(paceSecondsPerMile / 60);
-        const paceSeconds = Math.round(paceSecondsPerMile % 60);
 
         return {
           id: lap.id,
@@ -336,9 +344,7 @@ export async function getFastestLaps(
           date: lap.start_date_local,
           distance_miles: parseFloat(distanceMiles.toFixed(2)),
           duration_minutes: parseFloat(durationMinutes.toFixed(2)),
-          pace_per_mile: `${paceMinutes}:${paceSeconds
-            .toString()
-            .padStart(2, "0")}`,
+          pace_per_mile: formatPace(paceSecondsPerMile),
           pace_seconds: paceSecondsPerMile,
           average_speed_mph: parseFloat(
             (lap.average_speed * METERS_PER_SEC_TO_MPH).toFixed(2)
@@ -390,4 +396,182 @@ export function getPersonalRecords(runs: RunAnalysis[]): {
   });
 
   return prs;
+}
+
+function getWeekNumber(date: Date): number {
+  const startOfYear = new Date(date.getFullYear(), 0, 1);
+  const days = Math.floor(
+    (date.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000)
+  );
+  return Math.ceil((days + startOfYear.getDay() + 1) / 7);
+}
+
+function getWeekRange(date: Date): { startDate: string; endDate: string } {
+  const dayOfWeek = date.getDay();
+  const startDate = new Date(date);
+  startDate.setDate(date.getDate() - dayOfWeek);
+  const endDate = new Date(startDate);
+  endDate.setDate(startDate.getDate() + 6);
+
+  return {
+    startDate: startDate.toISOString().split("T")[0],
+    endDate: endDate.toISOString().split("T")[0],
+  };
+}
+
+function calculateAggregateStats(runs: RunAnalysis[]): {
+  totalMiles: number;
+  totalDuration: number;
+  totalElevation: number;
+  daysRan: number;
+  averagePace: string;
+  longestRun?: RunAnalysis;
+  fastestRun?: RunAnalysis;
+} {
+  if (runs.length === 0) {
+    return {
+      totalMiles: 0,
+      totalDuration: 0,
+      totalElevation: 0,
+      daysRan: 0,
+      averagePace: "0:00",
+    };
+  }
+
+  const totalMiles = runs.reduce((sum, run) => sum + run.distance_miles, 0);
+  const totalDuration = runs.reduce(
+    (sum, run) => sum + run.duration_minutes,
+    0
+  );
+  const totalElevation = runs.reduce(
+    (sum, run) => sum + run.elevation_gain_feet,
+    0
+  );
+
+  // Count unique days
+  const uniqueDays = new Set(
+    runs.map((run) => new Date(run.date).toISOString().split("T")[0])
+  );
+
+  // Calculate average pace
+  const totalSeconds = runs.reduce(
+    (sum, run) => sum + run.pace_seconds * run.distance_miles,
+    0
+  );
+  const avgPaceSeconds = totalSeconds / totalMiles;
+
+  // Find longest and fastest runs
+  const longestRun = runs.reduce(
+    (longest, run) =>
+      run.distance_miles > (longest?.distance_miles || 0) ? run : longest,
+    undefined as RunAnalysis | undefined
+  );
+
+  const fastestRun = runs.reduce(
+    (fastest, run) =>
+      run.pace_seconds < (fastest?.pace_seconds || Infinity) ? run : fastest,
+    undefined as RunAnalysis | undefined
+  );
+
+  return {
+    totalMiles: parseFloat(totalMiles.toFixed(2)),
+    totalDuration: parseFloat(totalDuration.toFixed(2)),
+    totalElevation: Math.round(totalElevation),
+    daysRan: uniqueDays.size,
+    averagePace: formatPace(avgPaceSeconds),
+    longestRun,
+    fastestRun,
+  };
+}
+
+export function getEnhancedMonthlyStats(
+  runs: RunAnalysis[],
+  year?: number,
+  month?: number
+): EnhancedMonthlyStats {
+  let filteredRuns = runs;
+
+  if (year) {
+    filteredRuns = filteredRuns.filter(
+      (run) => new Date(run.date).getFullYear() === year
+    );
+  }
+
+  if (month) {
+    filteredRuns = filteredRuns.filter(
+      (run) => new Date(run.date).getMonth() + 1 === month
+    );
+  }
+
+  const monthlyData: EnhancedMonthlyStats = {};
+
+  // First pass: organize runs by month and week
+  filteredRuns.forEach((run) => {
+    const date = new Date(run.date);
+    const monthKey = `${date.getFullYear()}-${(date.getMonth() + 1)
+      .toString()
+      .padStart(2, "0")}`;
+    const weekNum = getWeekNumber(date);
+
+    // Initialize month if it doesn't exist
+    if (!monthlyData[monthKey]) {
+      monthlyData[monthKey] = {
+        month: date.toLocaleString("default", { month: "long" }),
+        year: date.getFullYear(),
+        totalRuns: 0,
+        totalMiles: 0,
+        totalDuration: 0,
+        totalElevation: 0,
+        daysRan: 0,
+        averagePace: "",
+        weeklyStats: {},
+        runs: [],
+      };
+    }
+
+    const monthData = monthlyData[monthKey];
+    monthData.runs.push(run);
+
+    // Initialize week if it doesn't exist
+    if (!monthData.weeklyStats[weekNum]) {
+      const weekRange = getWeekRange(date);
+      monthData.weeklyStats[weekNum] = {
+        weekNumber: weekNum,
+        startDate: weekRange.startDate,
+        endDate: weekRange.endDate,
+        numRuns: 0,
+        totalMiles: 0,
+        totalDuration: 0,
+        totalElevation: 0,
+        daysRan: 0,
+        averagePace: "",
+        runs: [],
+      };
+    }
+
+    // Add run to week
+    monthData.weeklyStats[weekNum].runs.push(run);
+  });
+
+  // Second pass: calculate aggregates for each month and week
+  Object.values(monthlyData).forEach((monthData: EnhancedMonthStats) => {
+    // Calculate month aggregates
+    const monthStats = calculateAggregateStats(monthData.runs);
+    Object.assign(monthData, monthStats);
+
+    // Calculate week aggregates
+    Object.values(monthData.weeklyStats).forEach((weekData: WeekStats) => {
+      const weekStats = calculateAggregateStats(weekData.runs);
+      weekData.numRuns = weekData.runs.length;
+      weekData.totalMiles = weekStats.totalMiles;
+      weekData.totalDuration = weekStats.totalDuration;
+      weekData.totalElevation = weekStats.totalElevation;
+      weekData.daysRan = weekStats.daysRan;
+      weekData.averagePace = weekStats.averagePace;
+      weekData.longestRun = weekStats.longestRun;
+      weekData.fastestRun = weekStats.fastestRun;
+    });
+  });
+
+  return monthlyData;
 }

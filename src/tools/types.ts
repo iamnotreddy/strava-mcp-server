@@ -61,3 +61,39 @@ export interface FetchOptions {
   includeManual?: boolean;
   includePrivate?: boolean;
 }
+
+export interface WeekStats {
+  weekNumber: number; // 1-53
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  numRuns: number;
+  totalMiles: number;
+  totalDuration: number;
+  totalElevation: number;
+  daysRan: number; // Number of unique days with runs
+  averagePace: string;
+  longestRun?: RunAnalysis;
+  fastestRun?: RunAnalysis;
+  runs: RunAnalysis[]; // All runs in this week
+}
+
+export interface EnhancedMonthStats {
+  month: string; // Month name (e.g., "January")
+  year: number;
+  totalRuns: number;
+  totalMiles: number;
+  totalDuration: number;
+  totalElevation: number;
+  daysRan: number; // Number of unique days with runs
+  averagePace: string;
+  longestRun?: RunAnalysis;
+  fastestRun?: RunAnalysis;
+  weeklyStats: {
+    [weekNumber: number]: WeekStats;
+  };
+  runs: RunAnalysis[]; // All runs in this month
+}
+
+export interface EnhancedMonthlyStats {
+  [key: string]: EnhancedMonthStats; // key format: "YYYY-MM"
+}

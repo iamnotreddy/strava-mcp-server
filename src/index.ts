@@ -1,4 +1,3 @@
-// src/index.ts - Enhanced MCP Server with better error handling and logging
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -11,7 +10,16 @@ import {
   analyzeRuns,
   getFastestRuns,
   getLongestRuns,
+  getEnhancedMonthlyStats,
 } from "./tools/analyze-runs";
+import {
+  analyzeTimeOfDay,
+  analyzeDayOfWeek,
+  analyzeRunTitles,
+  findActivityGaps,
+  analyzeMonthlyLoadProgression,
+  analyzeDoubleDays,
+} from "./tools/run-analysis-helpers";
 import { z } from "zod";
 import { StravaClient } from "./strava-client";
 
@@ -65,6 +73,101 @@ const FindFastestLapsSchema = z.object({
 
 const GetLongestActivitiesSchema = z.object({
   count: z.number().default(5),
+  year: z.number().optional(),
+  month: z.number().optional().describe("Month (1-12)"),
+  before: z
+    .string()
+    .optional()
+    .describe("Filter activities before this date (YYYY-MM-DD)"),
+  after: z
+    .string()
+    .optional()
+    .describe("Filter activities after this date (YYYY-MM-DD)"),
+});
+
+const GetEnhancedMonthlyStatsSchema = z.object({
+  year: z.number().optional(),
+  month: z.number().optional().describe("Month (1-12)"),
+  before: z
+    .string()
+    .optional()
+    .describe("Filter activities before this date (YYYY-MM-DD)"),
+  after: z
+    .string()
+    .optional()
+    .describe("Filter activities after this date (YYYY-MM-DD)"),
+});
+
+const TimeOfDayAnalysisSchema = z.object({
+  year: z.number().optional(),
+  month: z.number().optional().describe("Month (1-12)"),
+  before: z
+    .string()
+    .optional()
+    .describe("Filter activities before this date (YYYY-MM-DD)"),
+  after: z
+    .string()
+    .optional()
+    .describe("Filter activities after this date (YYYY-MM-DD)"),
+});
+
+const DayOfWeekAnalysisSchema = z.object({
+  year: z.number().optional(),
+  month: z.number().optional().describe("Month (1-12)"),
+  before: z
+    .string()
+    .optional()
+    .describe("Filter activities before this date (YYYY-MM-DD)"),
+  after: z
+    .string()
+    .optional()
+    .describe("Filter activities after this date (YYYY-MM-DD)"),
+});
+
+const TitleWordAnalysisSchema = z.object({
+  year: z.number().optional(),
+  month: z.number().optional().describe("Month (1-12)"),
+  before: z
+    .string()
+    .optional()
+    .describe("Filter activities before this date (YYYY-MM-DD)"),
+  after: z
+    .string()
+    .optional()
+    .describe("Filter activities after this date (YYYY-MM-DD)"),
+});
+
+const ActivityGapsSchema = z.object({
+  minGapDays: z
+    .number()
+    .default(14)
+    .describe("Minimum number of days between activities to consider as a gap"),
+  year: z.number().optional(),
+  month: z.number().optional().describe("Month (1-12)"),
+  before: z
+    .string()
+    .optional()
+    .describe("Filter activities before this date (YYYY-MM-DD)"),
+  after: z
+    .string()
+    .optional()
+    .describe("Filter activities after this date (YYYY-MM-DD)"),
+});
+
+const MonthlyLoadProgressionSchema = z.object({
+  year: z.number().optional(),
+  month: z.number().optional().describe("Month (1-12)"),
+  before: z
+    .string()
+    .optional()
+    .describe("Filter activities before this date (YYYY-MM-DD)"),
+  after: z
+    .string()
+    .optional()
+    .describe("Filter activities after this date (YYYY-MM-DD)"),
+});
+
+const DoubleDaysSchema = z.object({
   year: z.number().optional(),
   month: z.number().optional().describe("Month (1-12)"),
   before: z
@@ -147,7 +250,7 @@ const tools: Tool[] = [
   {
     name: "get_activity_laps",
     description:
-      "Get lap data from specific activities, filtered by target distance",
+      "Analyze lap/split data for specific activities by their IDs (up to 10 activities at a time). This tool takes a list of activity IDs and returns their fastest laps that match a target distance. Use this when you want to examine splits from known activities, not for searching across your entire activity history.",
     inputSchema: {
       type: "object",
       properties: {
@@ -190,6 +293,193 @@ const tools: Tool[] = [
         year: {
           type: "number",
           description: "Optional year to filter activities",
+        },
+      },
+    },
+  },
+  {
+    name: "get_enhanced_monthly_stats",
+    description: "Get detailed monthly statistics including weekly breakdowns",
+    inputSchema: {
+      type: "object",
+      properties: {
+        year: {
+          type: "number",
+          description: "Optional year to filter activities",
+        },
+        month: {
+          type: "number",
+          description: "Optional month (1-12) to filter activities",
+        },
+        before: {
+          type: "string",
+          description: "Filter activities before this date (YYYY-MM-DD)",
+        },
+        after: {
+          type: "string",
+          description: "Filter activities after this date (YYYY-MM-DD)",
+        },
+      },
+    },
+  },
+  {
+    name: "find_time_of_day_patterns",
+    description:
+      "Analyze when you run to understand patterns in your running schedule and performance across different times of day",
+    inputSchema: {
+      type: "object",
+      properties: {
+        year: {
+          type: "number",
+          description: "Optional year to filter activities",
+        },
+        month: {
+          type: "number",
+          description: "Optional month (1-12) to filter activities",
+        },
+        before: {
+          type: "string",
+          description: "Filter activities before this date (YYYY-MM-DD)",
+        },
+        after: {
+          type: "string",
+          description: "Filter activities after this date (YYYY-MM-DD)",
+        },
+      },
+    },
+  },
+  {
+    name: "get_day_of_week_analysis",
+    description:
+      "Analyze running patterns by day of week to understand weekend vs weekday differences and consistency",
+    inputSchema: {
+      type: "object",
+      properties: {
+        year: {
+          type: "number",
+          description: "Optional year to filter activities",
+        },
+        month: {
+          type: "number",
+          description: "Optional month (1-12) to filter activities",
+        },
+        before: {
+          type: "string",
+          description: "Filter activities before this date (YYYY-MM-DD)",
+        },
+        after: {
+          type: "string",
+          description: "Filter activities after this date (YYYY-MM-DD)",
+        },
+      },
+    },
+  },
+  {
+    name: "get_title_word_analysis",
+    description:
+      "Analyze patterns in your activity titles including word frequency and sentiment analysis",
+    inputSchema: {
+      type: "object",
+      properties: {
+        year: {
+          type: "number",
+          description: "Optional year to filter activities",
+        },
+        month: {
+          type: "number",
+          description: "Optional month (1-12) to filter activities",
+        },
+        before: {
+          type: "string",
+          description: "Filter activities before this date (YYYY-MM-DD)",
+        },
+        after: {
+          type: "string",
+          description: "Filter activities after this date (YYYY-MM-DD)",
+        },
+      },
+    },
+  },
+  {
+    name: "find_activity_gaps",
+    description:
+      "Find periods of inactivity and analyze patterns around breaks. Identifies gaps in your running schedule and analyzes performance changes before and after breaks.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        minGapDays: {
+          type: "number",
+          description:
+            "Minimum number of days between activities to consider as a gap",
+          default: 14,
+        },
+        year: {
+          type: "number",
+          description: "Optional year to filter activities",
+        },
+        month: {
+          type: "number",
+          description: "Optional month (1-12) to filter activities",
+        },
+        before: {
+          type: "string",
+          description: "Filter activities before this date (YYYY-MM-DD)",
+        },
+        after: {
+          type: "string",
+          description: "Filter activities after this date (YYYY-MM-DD)",
+        },
+      },
+    },
+  },
+  {
+    name: "get_monthly_load_progression",
+    description:
+      "Track how your training volume builds month-over-month and identify periods of rapid increase. Helps monitor adherence to the 10% rule for training progression.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        year: {
+          type: "number",
+          description: "Optional year to filter activities",
+        },
+        month: {
+          type: "number",
+          description: "Optional month (1-12) to filter activities",
+        },
+        before: {
+          type: "string",
+          description: "Filter activities before this date (YYYY-MM-DD)",
+        },
+        after: {
+          type: "string",
+          description: "Filter activities after this date (YYYY-MM-DD)",
+        },
+      },
+    },
+  },
+  {
+    name: "find_double_days",
+    description:
+      "Analyze patterns and performance implications of days with multiple runs. Includes frequency analysis and impact on subsequent day performance.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        year: {
+          type: "number",
+          description: "Optional year to filter activities",
+        },
+        month: {
+          type: "number",
+          description: "Optional month (1-12) to filter activities",
+        },
+        before: {
+          type: "string",
+          description: "Filter activities before this date (YYYY-MM-DD)",
+        },
+        after: {
+          type: "string",
+          description: "Filter activities after this date (YYYY-MM-DD)",
         },
       },
     },
@@ -441,6 +731,248 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               null,
               2
             ),
+          },
+        ],
+      };
+    }
+
+    if (name === "get_enhanced_monthly_stats") {
+      const params = GetEnhancedMonthlyStatsSchema.parse(args);
+      const dateFilter: any = {};
+
+      if (params.year) dateFilter.year = params.year;
+      if (params.month) dateFilter.month = params.month;
+      if (params.before) dateFilter.before = new Date(params.before);
+      if (params.after) dateFilter.after = new Date(params.after);
+
+      const activities = await fetchActivities(
+        Object.keys(dateFilter).length > 0 ? { dateFilter } : {}
+      );
+      const { runs } = analyzeRuns(activities);
+      const monthlyStats = getEnhancedMonthlyStats(
+        runs,
+        params.year,
+        params.month
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(monthlyStats, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (name === "find_time_of_day_patterns") {
+      const params = TimeOfDayAnalysisSchema.parse(args);
+      const dateFilter: any = {};
+
+      if (params.year) dateFilter.year = params.year;
+      if (params.month) dateFilter.month = params.month;
+      if (params.before) dateFilter.before = new Date(params.before);
+      if (params.after) dateFilter.after = new Date(params.after);
+
+      const activities = await fetchActivities(
+        Object.keys(dateFilter).length > 0 ? { dateFilter } : {}
+      );
+      const { runs } = analyzeRuns(activities);
+      const timeOfDayStats = analyzeTimeOfDay(runs);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(timeOfDayStats, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (name === "get_day_of_week_analysis") {
+      const params = DayOfWeekAnalysisSchema.parse(args);
+      const dateFilter: any = {};
+
+      if (params.year) dateFilter.year = params.year;
+      if (params.month) dateFilter.month = params.month;
+      if (params.before) dateFilter.before = new Date(params.before);
+      if (params.after) dateFilter.after = new Date(params.after);
+
+      const activities = await fetchActivities(
+        Object.keys(dateFilter).length > 0 ? { dateFilter } : {}
+      );
+      const { runs } = analyzeRuns(activities);
+      const dayOfWeekStats = analyzeDayOfWeek(runs);
+
+      // Create a natural language summary
+      const summary = dayOfWeekStats.summary;
+      const runnerType = summary.isWeekendRunner
+        ? "weekend runner"
+        : "weekday runner";
+      const avgRunsPerWeek = summary.averageRunsPerWeek;
+      const preferredDays = summary.preferredRunningDays.join(", ");
+
+      const weekdayConsistency = Math.round(
+        dayOfWeekStats.weekdayAvg.consistency
+      );
+      const weekendConsistency = Math.round(
+        dayOfWeekStats.weekendAvg.consistency
+      );
+
+      const naturalSummary =
+        `You are primarily a ${runnerType}, averaging ${avgRunsPerWeek} runs per week. ` +
+        `Your preferred running days are ${preferredDays}. ` +
+        `You are most consistent on ${summary.mostConsistentDay}s and least active on ${summary.leastActiveDay}s. ` +
+        `Your weekday consistency is ${weekdayConsistency}% vs weekend consistency of ${weekendConsistency}%.`;
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                summary: naturalSummary,
+                details: {
+                  weekday_vs_weekend: {
+                    weekday_avg: {
+                      runs_per_week: (
+                        dayOfWeekStats.weekdayAvg.count /
+                        (runs.length / avgRunsPerWeek)
+                      ).toFixed(1),
+                      avg_distance: dayOfWeekStats.weekdayAvg.averageDistance,
+                      avg_pace: dayOfWeekStats.weekdayAvg.averagePace,
+                      consistency: `${weekdayConsistency}%`,
+                    },
+                    weekend_avg: {
+                      runs_per_week: (
+                        dayOfWeekStats.weekendAvg.count /
+                        (runs.length / avgRunsPerWeek)
+                      ).toFixed(1),
+                      avg_distance: dayOfWeekStats.weekendAvg.averageDistance,
+                      avg_pace: dayOfWeekStats.weekendAvg.averagePace,
+                      consistency: `${weekendConsistency}%`,
+                    },
+                  },
+                  top_3_days: summary.preferredRunningDays.map((day) => ({
+                    day,
+                    stats: dayOfWeekStats.byDay[day],
+                  })),
+                },
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    if (name === "get_title_word_analysis") {
+      const params = TitleWordAnalysisSchema.parse(args);
+      const dateFilter: any = {};
+
+      if (params.year) dateFilter.year = params.year;
+      if (params.month) dateFilter.month = params.month;
+      if (params.before) dateFilter.before = new Date(params.before);
+      if (params.after) dateFilter.after = new Date(params.after);
+
+      const activities = await fetchActivities(
+        Object.keys(dateFilter).length > 0 ? { dateFilter } : {}
+      );
+      const { runs } = analyzeRuns(activities);
+      const titleAnalysis = analyzeRunTitles(runs);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(titleAnalysis, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (name === "find_activity_gaps") {
+      const params = ActivityGapsSchema.parse(args);
+      const dateFilter: any = {};
+
+      if (params.year) dateFilter.year = params.year;
+      if (params.month) dateFilter.month = params.month;
+      if (params.before) dateFilter.before = new Date(params.before);
+      if (params.after) dateFilter.after = new Date(params.after);
+
+      const activities = await fetchActivities(
+        Object.keys(dateFilter).length > 0 ? { dateFilter } : {}
+      );
+      const { runs } = analyzeRuns(activities);
+      const gaps = findActivityGaps(runs, params.minGapDays);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                total_gaps: gaps.length,
+                gaps: gaps.map((gap) => ({
+                  ...gap,
+                  daysOff: Math.round(gap.daysOff),
+                })),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    if (name === "get_monthly_load_progression") {
+      const params = MonthlyLoadProgressionSchema.parse(args);
+      const dateFilter: any = {};
+
+      if (params.year) dateFilter.year = params.year;
+      if (params.month) dateFilter.month = params.month;
+      if (params.before) dateFilter.before = new Date(params.before);
+      if (params.after) dateFilter.after = new Date(params.after);
+
+      const activities = await fetchActivities(
+        Object.keys(dateFilter).length > 0 ? { dateFilter } : {}
+      );
+      const { runs } = analyzeRuns(activities);
+      const progression = analyzeMonthlyLoadProgression(runs);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(progression, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (name === "find_double_days") {
+      const params = DoubleDaysSchema.parse(args);
+      const dateFilter: any = {};
+
+      if (params.year) dateFilter.year = params.year;
+      if (params.month) dateFilter.month = params.month;
+      if (params.before) dateFilter.before = new Date(params.before);
+      if (params.after) dateFilter.after = new Date(params.after);
+
+      const activities = await fetchActivities(
+        Object.keys(dateFilter).length > 0 ? { dateFilter } : {}
+      );
+      const { runs } = analyzeRuns(activities);
+      const doubleDayAnalysis = analyzeDoubleDays(runs);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(doubleDayAnalysis, null, 2),
           },
         ],
       };

@@ -1,10 +1,9 @@
-// src/tools/fetch-activities.ts
 import { StravaClient, StravaActivity } from "../strava-client";
-import { Cache } from "../utils/cache";
+import { SmartCache } from "../utils/smart-cache";
 import { DateFilter, FetchOptions } from "./types";
 
-// Create a cache instance with 24 hour TTL
-const activitiesCache = new Cache<StravaActivity[]>(86400);
+// Create a cache instance
+const smartCache = new SmartCache(86400);
 
 function getDateRangeFromFilter(filter: DateFilter): {
   startDate: string;
@@ -50,10 +49,10 @@ export async function fetchActivities(
   // Generate cache key based on options
   const cacheKey = JSON.stringify(options);
 
-  // Try to get from cache first
-  const cachedActivities = activitiesCache.get(cacheKey);
+  // Try to get from smart cache first
+  const cachedActivities = smartCache.get(options);
   if (cachedActivities) {
-    console.error("Using cached activities data");
+    console.error("Using smart cached activities data");
     return cachedActivities;
   }
 
@@ -88,7 +87,7 @@ export async function fetchActivities(
   }
 
   // Store in cache before returning
-  activitiesCache.set(cacheKey, activities);
+  smartCache.set(options, activities);
 
   return activities;
 }

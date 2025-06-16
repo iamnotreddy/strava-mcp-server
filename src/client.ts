@@ -97,7 +97,9 @@ class StravaClient {
         },
       ],
       tools: formattedTools,
-      system: `You are an AI assistant helping users analyze their Strava data. You have access to tools that can fetch and analyze Strava activities. Use these tools to answer the user's questions about their running data, fastest times, lap analysis, etc.`,
+      system: `You are an AI assistant helping users analyze their Strava data. You have access to tools that can fetch and analyze Strava activities. Use these tools to answer the user's questions about their running data, fastest times, lap analysis, etc. Current date: ${
+        new Date().toISOString().split("T")[0]
+      }`,
     });
 
     // Build conversation history
