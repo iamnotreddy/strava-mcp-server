@@ -1,0 +1,19 @@
+{
+  "name": "@strava-mcp/shared-types",
+  "version": "1.0.0",
+  "description": "Shared types for Strava MCP project",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "npx tsc",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "@types/node": "^24.0.1"
+  }
+}

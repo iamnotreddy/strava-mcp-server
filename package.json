@@ -1,32 +1,15 @@
 {
-  "name": "strava-mcp-server",
+  "name": "strava-mcp-monorepo",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx watch src/index.ts",
-    "clean": "rm -rf dist",
-    "client": "node dist/client.js dist/index.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.54.0",
-    "@modelcontextprotocol/sdk": "^1.12.2",
-    "axios": "^1.9.0",
-    "dotenv": "^16.5.0",
-    "express": "^5.1.0",
-    "open": "^10.1.2"
-  },
-  "devDependencies": {
-    "@types/express": "^5.0.3",
-    "@types/node": "^24.0.1",
-    "nodemon": "^3.1.10",
-    "tsx": "^4.20.3",
-    "typescript": "^5.8.3"
+    "build": "npm run build --workspaces",
+    "dev:api": "npm run dev --workspace=@strava-mcp/api",
+    "dev:mcp": "npm run dev --workspace=@strava-mcp/mcp-server",
+    "dev:shared": "npm run build --workspace=@strava-mcp/shared-types",
+    "clean": "npm run clean --workspaces"
   }
 }

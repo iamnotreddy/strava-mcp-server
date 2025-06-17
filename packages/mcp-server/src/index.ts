@@ -5,6 +5,7 @@ import {
   ListToolsRequestSchema,
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
+import { ActivityStub, InsightPayload } from "@strava-mcp/shared-types";
 import { fetchActivities } from "./tools/fetch-activities";
 import {
   analyzeRuns,

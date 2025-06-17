@@ -3,10 +3,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Anthropic } from "@anthropic-ai/sdk";
 import { MessageParam } from "@anthropic-ai/sdk/resources/messages.mjs";
+import { InsightPayload } from "@strava-mcp/shared-types";
 import dotenv from "dotenv";
 import * as readline from "readline";
 
-dotenv.config();
+dotenv.config({ path: "../../.env" });
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 if (!ANTHROPIC_API_KEY) {
@@ -72,7 +73,7 @@ class StravaClient {
     });
   }
 
-  async query(question: string): Promise<string> {
+  async query(question: string): Promise<InsightPayload> {
     const messages: MessageParam[] = [];
 
     // Format tools for Anthropic API
@@ -121,7 +122,11 @@ class StravaClient {
         const textContent = assistantMessage.content.find(
           (c) => c.type === "text"
         );
-        return textContent?.text || "No response generated";
+        return {
+          question,
+          answer: textContent?.text || "No response generated",
+          supportingActivities: [],
+        };
       }
 
       // Add assistant's message to history
@@ -202,36 +207,30 @@ class StravaClient {
 
     rl.prompt();
 
-    rl.on("line", async (line) => {
-      const query = line.trim();
-
-      if (query.toLowerCase() === "quit" || query.toLowerCase() === "exit") {
+    rl.on("line", async (query) => {
+      if (query.toLowerCase() === "quit") {
+        await this.disconnect();
         rl.close();
         return;
       }
 
-      if (query) {
-        try {
-          console.log("\nProcessing...");
-          const response = await this.query(query);
-          console.log("\n" + response + "\n");
-        } catch (error) {
-          console.error(
-            "\nError:",
-            error instanceof Error ? error.message : error
-          );
-          console.error("\n");
+      try {
+        console.log("\nProcessing...");
+        const response = await this.query(query);
+        console.log("\n" + response.answer + "\n");
+        if (response.supportingActivities.length > 0) {
+          console.log("Supporting activities:");
+          response.supportingActivities.forEach((activity) => {
+            console.log(`- ${activity.name} (${activity.startDate})`);
+          });
         }
+      } catch (error) {
+        console.error(
+          `Error: ${error instanceof Error ? error.message : "Unknown error"}`
+        );
       }
 
       rl.prompt();
-    });
-
-    rl.on("close", async () => {
-      console.log("\nDisconnecting...");
-      await this.disconnect();
-      console.log("Goodbye! 👋");
-      process.exit(0);
     });
   }
 }
