@@ -23,6 +23,9 @@ import {
 } from "./tools/run-analysis-helpers";
 import { z } from "zod";
 import { StravaClient } from "./strava-client";
+import { getMCPClient } from "./client";
+
+export { getMCPClient };
 
 const server = new Server(
   {

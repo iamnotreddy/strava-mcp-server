@@ -35,42 +35,96 @@ class StravaClient {
   private anthropic: Anthropic;
   private transport: StdioClientTransport | null = null;
   private tools: MCPTool[] = [];
+  private serverPath: string;
+  private isConnected: boolean = false;
+  private reconnectAttempts: number = 0;
+  private maxReconnectAttempts: number = 3;
+  private reconnectDelay: number = 1000; // 1 second
 
-  constructor() {
+  constructor(serverPath: string) {
+    this.serverPath = serverPath;
     this.anthropic = new Anthropic({
       apiKey: ANTHROPIC_API_KEY,
     });
-    // Increase the timeout to 5 minutes (300000ms)
     this.mcp = new Client({
       name: "strava-mcp-client",
       version: "1.0.0",
-      requestTimeout: 300000,
+      requestTimeout: 300000, // 5 minutes
     });
   }
 
-  async connect(serverPath: string) {
+  async connect(): Promise<void> {
+    if (this.isConnected) return;
+
     console.error("Connecting to MCP server...");
 
-    // Create transport that spawns the server
-    this.transport = new StdioClientTransport({
-      command: "node",
-      args: [serverPath],
-      env: process.env as Record<string, string>,
-    });
+    try {
+      // Create transport that spawns the server
+      this.transport = new StdioClientTransport({
+        command: "node",
+        args: [this.serverPath],
+        env: process.env as Record<string, string>,
+      });
 
-    // Connect to the server
-    await this.mcp.connect(this.transport);
-    console.error("Connected to MCP server successfully!");
+      // Connect to the server
+      await this.mcp.connect(this.transport);
 
-    // List available tools
-    const { tools } = await this.mcp.listTools();
-    console.error("\nAvailable tools:");
-    this.tools = tools;
-    tools.forEach((tool: MCPTool) => {
-      console.error(
-        `  - ${tool.name}: ${tool.description || "No description"}`
+      // List available tools
+      const { tools } = await this.mcp.listTools();
+      this.tools = tools;
+
+      this.isConnected = true;
+      this.reconnectAttempts = 0;
+      console.error("Connected to MCP server successfully!");
+    } catch (error) {
+      console.error("Failed to connect to MCP server:", error);
+      throw error;
+    }
+  }
+
+  private async ensureConnected(): Promise<void> {
+    if (!this.isConnected) {
+      await this.connect();
+    }
+  }
+
+  private async reconnect(): Promise<void> {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      throw new Error("Max reconnection attempts reached");
+    }
+
+    this.reconnectAttempts++;
+    console.error(
+      `Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`
+    );
+
+    try {
+      await this.disconnect();
+      await new Promise((resolve) =>
+        setTimeout(resolve, this.reconnectDelay * this.reconnectAttempts)
       );
-    });
+      await this.connect();
+    } catch (error) {
+      console.error("Reconnection failed:", error);
+      throw error;
+    }
+  }
+
+  async getInsight(question: string): Promise<InsightPayload> {
+    try {
+      await this.ensureConnected();
+      return await this.query(question);
+    } catch (error) {
+      console.error("Error in getInsight:", error);
+
+      // Try to reconnect if we're not connected
+      if (!this.isConnected) {
+        await this.reconnect();
+        return await this.query(question);
+      }
+
+      throw error;
+    }
   }
 
   async query(question: string): Promise<InsightPayload> {
@@ -185,8 +239,14 @@ class StravaClient {
   }
 
   async disconnect() {
-    await this.mcp.close();
-    await this.transport?.close();
+    try {
+      await this.mcp.close();
+      await this.transport?.close();
+    } catch (error) {
+      console.error("Error during disconnect:", error);
+    } finally {
+      this.isConnected = false;
+    }
   }
 
   async startChat() {
@@ -216,7 +276,7 @@ class StravaClient {
 
       try {
         console.log("\nProcessing...");
-        const response = await this.query(query);
+        const response = await this.getInsight(query);
         console.log("\n" + response.answer + "\n");
         if (response.supportingActivities.length > 0) {
           console.log("Supporting activities:");
@@ -235,16 +295,26 @@ class StravaClient {
   }
 }
 
+// Export a singleton instance
+let clientInstance: StravaClient | null = null;
+
+export function getMCPClient(
+  serverPath: string = "dist/index.js"
+): StravaClient {
+  if (!clientInstance) {
+    clientInstance = new StravaClient(serverPath);
+  }
+  return clientInstance;
+}
+
 // Main execution
 async function main() {
-  // Default to dist/index.js if no path provided
   const serverPath = process.argv[2] || "dist/index.js";
-
   console.log(`Starting client with server at: ${serverPath}`);
 
-  const client = new StravaClient();
+  const client = getMCPClient(serverPath);
   try {
-    await client.connect(serverPath);
+    await client.connect();
     await client.startChat();
   } catch (error) {
     console.error("Fatal error:", error);
@@ -252,4 +322,6 @@ async function main() {
   }
 }
 
-main().catch(console.error);
+if (require.main === module) {
+  main().catch(console.error);
+}
